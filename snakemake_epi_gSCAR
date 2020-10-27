@@ -1,0 +1,556 @@
+############################################
+# Libraries, versions, authors and license #
+############################################
+
+
+#############
+# FUNCTIONS #
+#############
+
+
+# The onsuccess handler is executed if the workflow finished without error.
+onsuccess:
+    print("\n\n#################################\n#  Workflow finished, no error  #")
+    print(                                       "# Check the FINAL_OUTPUT folder #\n#################################\n\n")
+# Else, the onerror handler is executed.
+onerror:
+    print("\n\n#####################\n# An error occurred #\n#####################\n\n")
+
+
+
+# onstart handler will be executed before the workflow starts. Note that dry-runs do not trigger any of the handlers
+onstart:
+    print("Reading samples and metadata....\n")
+    print ("Running workflow for the following ")
+    print ("Running workflow for the following BAM files:\n " )
+
+
+from os.path import join
+
+# Globals ---------------------------------------------------------------------
+
+RootDIR            = "/mnt/data_3/2019-08-epi-gSCAR/" #change to config file
+ResourcesDIR       = RootDIR + "00_resources/"
+FastqDIR           = RootDIR + "01_input_fastq/"
+TrimDIR            = RootDIR + "02_trimmed_fastq/"
+StorageDIR         = RootDIR + "08_storage/"
+OutputDIR          = RootDIR + "09_output/"
+
+
+# A Snakemake regular expression matching the forward mate FASTQ files.
+(SampleNAMES,) = glob_wildcards(join(FastqDIR, '{sample}_R1.fastq'))
+
+
+# Patterns for the 1st mate and the 2nd mate using the 'sample' wildcard.
+#FASTQ_PATTERN_R1 = expand('{sample}_R1.fastq', sample = SampleNAMES)
+#FASTQ_PATTERN_R2 = expand('{sample}_R2.fastq', sample = SampleNAMES)
+
+
+print(RootDIR)
+print(FastqDIR)
+print("\n\nSamples to process: ")
+print(SampleNAMES)
+#print(FASTQ_PATTERN_R1)
+#print(FASTQ_PATTERN_R2)
+#print(expand(TrimDIR +"{sample}_Adapter_clear_merged.fq", sample = SampleNAMES))
+#print(expand(TrimDIR +"{sample}_Adapter_MALBAC-R-L_clear_joined.sam", sample = SampleNAMES))
+        #expand(TrimDIR +'{sample}_Adapter_clear_merged.fq', sample = SampleNAMES)
+
+
+
+
+rule all:
+    input:
+        #expand(TrimDIR +'{sample}_Adapter_MALBAC-R-L_clear_joined.sam', sample = SampleNAMES)
+        #expand(TrimDIR +'{sample}_complete_overlap_HhaI_CpG.bed', sample = SampleNAMES) 
+        #expand(TrimDIR +'{sample}_quali_filtered_complete_overlap_HhaI_CpG_uniq_c.bed', sample = SampleNAMES) 
+        #expand(TrimDIR + '{sample}_quali_filtered_complete_overlap_HhaI_CpG.bed', sample = SampleNAMES)
+        expand(OutputDIR +'result_{sample}_beta_values.bed', sample = SampleNAMES) 
+        #expand(TrimDIR + '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined.sam', sample = SampleNAMES)
+
+
+
+
+      
+rule S1_Adapter_trimming_with_c:
+    input:
+        ADAPTERS = ResourcesDIR + 'adapters.fa',
+        r1 = FastqDIR + "{sample}_R1.fastq",
+        r2 = FastqDIR + "{sample}_R2.fastq"
+    output:
+        r1_Adapter_clear = join(TrimDIR, '{sample}_R1_Adapter_clear.fq'),
+        r2_Adapter_clear = join(TrimDIR, '{sample}_R2_Adapter_clear.fq')
+    shell:
+        "bbduk.sh -Xmx1g "
+        "in1={input.r1} "
+        "in2={input.r2} "
+        "out1={output.r1_Adapter_clear} "
+        "out2={output.r2_Adapter_clear} "
+        "ref={input.ADAPTERS} "
+        "ktrim=r k=23 mink=8 hdist=1 tpe tbo fixjunk ignorebadquality"
+
+
+rule S2_Merging:
+    input:
+        r1AdapterCleared = join(TrimDIR, '{sample}_R1_Adapter_clear.fq'),
+        r2AdapterCleared = join(TrimDIR, '{sample}_R2_Adapter_clear.fq')
+    output:
+        SampleAdapterClearedMerged = join(TrimDIR, '{sample}_Adapter_clear_merged.fq'),
+        SampleAdapterClearedUnmerged = join(TrimDIR, '{sample}_Adapter_clear_unmerged.fq')
+    #message: "{ruleDisplayMessage} ??? {input.sample} ???..."
+    shell:
+        "bbmerge.sh "
+        "in1={input.r1AdapterCleared} "
+        "in2={input.r2AdapterCleared} "
+        "out={output.SampleAdapterClearedMerged} "
+        "outu={output.SampleAdapterClearedUnmerged}"
+
+rule S3_MalbacTRIM_merged_3:
+    input:
+        SampleAdapterClearedMerged = join(TrimDIR, '{sample}_Adapter_clear_merged.fq')
+    output:
+        SampleAdapterClearedMergedR = join(TrimDIR, '{sample}_Adapter_MALBAC-R_clear_merged.fq')
+    shell:
+        "bbduk.sh -Xmx1g "
+        "in={input.SampleAdapterClearedMerged} "
+        "out={output.SampleAdapterClearedMergedR} " 
+        "literal=CTCCACACTACCTCAACCATCACTCAC "
+        "ktrim=r k=20 mink=7 hdist=1 rcomp=f ignorebadquality"
+        
+rule S3_MalbacTRIM_merged_3_5:
+    input:
+        SampleAdapterClearedMergedR = join(TrimDIR, '{sample}_Adapter_MALBAC-R_clear_merged.fq')
+    output:
+        SampleAdapterClearedMergedRL = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged.fq')
+    shell:
+        "bbduk.sh -Xmx1g "
+        "in={input.SampleAdapterClearedMergedR} "
+        "out={output.SampleAdapterClearedMergedRL} "
+        "literal=GTGAGTGATGGTTGAGGTAGTGTGGAG " 
+        "ktrim=l k=20 mink=7 hdist=1 rcomp=f ignorebadquality"
+
+rule S3_MalbacTRIM_UNmerged_3:
+    input:
+        SampleAdapterClearedUNMerged = join(TrimDIR, '{sample}_Adapter_clear_unmerged.fq')
+    output:
+        SampleAdapterClearedUNMergedR = join(TrimDIR, '{sample}_Adapter_MALBAC-R_clear_unmerged.fq')
+    shell:
+        "bbduk.sh -Xmx1g "
+        "in={input.SampleAdapterClearedUNMerged} "
+        "out={output.SampleAdapterClearedUNMergedR} " 
+        "literal=CTCCACACTACCTCAACCATCACTCAC "
+        "ktrim=r k=20 mink=7 hdist=1 rcomp=f ignorebadquality"
+        
+rule S3_MalbacTRIM_UNmerged_3_5:
+    input:
+        SampleAdapterClearedUNMergedR = join(TrimDIR, '{sample}_Adapter_MALBAC-R_clear_unmerged.fq')
+    output:
+        SampleAdapterClearedUNMergedRL = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged.fq')
+    shell:
+        "bbduk.sh -Xmx1g "
+        "in={input.SampleAdapterClearedUNMergedR} "
+        "out={output.SampleAdapterClearedUNMergedRL} "
+        "literal=GTGAGTGATGGTTGAGGTAGTGTGGAG " 
+        "ktrim=l k=20 mink=7 hdist=1 rcomp=f ignorebadquality"
+
+rule S4a_SitesHhaIIntact:
+    input:
+        SampleAdapterClearedMergedRL = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged.fq'),
+        SampleAdapterClearedUNMergedRL = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged.fq')
+    output:
+        SampleAdapterClearedMergedRLPolyA = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_merged.fq'),
+        SampleAdapterClearedUNMergedRLPolyA = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_unmerged.fq')
+    run: 
+        shell("bbduk.sh -Xmx1g "
+        "in1={input.SampleAdapterClearedMergedRL} "
+        "out={output.SampleAdapterClearedMergedRLPolyA} "
+        "trimpolya=1")
+        shell("bbduk.sh -Xmx1g "
+        "in1={input.SampleAdapterClearedUNMergedRL} "
+        "out={output.SampleAdapterClearedUNMergedRLPolyA} "
+        "trimpolya=1")
+        
+        
+rule S4b_BWA_MEM_merged_UNmerged:
+    input:
+        SampleAdapterClearedMergedRLPolyA = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_merged.fq'),
+        SampleAdapterClearedUNMergedRLPolyA = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_unmerged.fq')
+    output:
+        SampleAdapterClearedMergedRLPolyAMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_merged.sam'),
+        SampleAdapterClearedUNMergedRLPolyAMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_unmerged.sam')
+    run:       
+        shell("bwa mem "
+            "/mnt/data_1/genomes/hg19/UCSC/tar/hg19.fa "
+            "{input.SampleAdapterClearedMergedRLPolyA} "
+            "-t 8 -v 1 -k 19 -w 100 -d 100 "
+            "-r 1.5 -y 20 -c 500 -D 0.5 -W 0 "
+            "-m 50 -A 1 -B 4 -O 6,6 -E 1,1 " 
+            "-L 5,5 -U 17 -T 30 -h 5 "
+            "> {output.SampleAdapterClearedMergedRLPolyAMapped}")
+        shell("bwa mem "
+            "/mnt/data_1/genomes/hg19/UCSC/tar/hg19.fa "
+            "{input.SampleAdapterClearedUNMergedRLPolyA} "
+            "-t 8 -v 1 -k 19 -w 100 -d 100 "
+            "-r 1.5 -y 20 -c 500 -D 0.5 -W 0 "
+            "-m 50 -A 1 -B 4 -O 6,6 -E 1,1 " 
+            "-L 5,5 -U 17 -T 30 -h 5 "
+            "> {output.SampleAdapterClearedUNMergedRLPolyAMapped}")
+        
+rule S4c_BAM_Merge_Filter_Bed:
+    input:
+        SampleAdapterClearedMergedRLPolyAMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_merged.sam'),
+        SampleAdapterClearedUNMergedRLPolyAMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_unmerged.sam')
+    output:
+        SampleAdapterClearedJoinedRLPolyAMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined.sam'),
+       # SampleAdapterClearedJoinedRLPolyAMappedBam = join(StorageDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined.bam'),
+        SampleAdapterClearedJoinedRLPolyAMappedFiltered = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined_quali_filtered.bam'),
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined_quali_filtered.bed')
+    run:       
+        shell("picard"
+    " MergeSamFiles"
+    " MSD=true VALIDATION_STRINGENCY=LENIENT"
+    " I={input.SampleAdapterClearedMergedRLPolyAMapped}"
+    " I={input.SampleAdapterClearedUNMergedRLPolyAMapped}"
+    " O={output.SampleAdapterClearedJoinedRLPolyAMapped}")
+        shell("samtools"
+    " view -b -F 0x904 -q 10"
+    " {output.SampleAdapterClearedJoinedRLPolyAMapped}"
+    " > {output.SampleAdapterClearedJoinedRLPolyAMappedFiltered}")   
+        shell("bedtools bamtobed" 
+    " -i {output.SampleAdapterClearedJoinedRLPolyAMappedFiltered}"
+    " > {output.SampleAdapterClearedJoinedRLPolyAMappedFilteredBed}") 
+    #    shell("samtools"
+    #" view -b"
+    #" {output.SampleAdapterClearedJoinedRLPolyAMapped}"
+    #" > {output.SampleAdapterClearedJoinedRLPolyAMappedBam}")
+        
+        
+        
+rule S4d_Overlap_HhaI_CpG:
+    input:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined_quali_filtered.bed')
+    output:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpG = join(TrimDIR, '{sample}_quali_filtered_complete_overlap_HhaI_CpG.bed')
+    run:       
+        shell("bedtools intersect "
+            " -a {input.SampleAdapterClearedJoinedRLPolyAMappedFilteredBed}"
+            " -b /mnt/data_3/2019-08-epi-gSCAR/00_resources/HhaI_hg19_biostar86480_coordinates_only_2bp_slop.bed"
+            " -F 1 |"
+            " bedtools slop -i stdin"
+            " -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -b -2 |"
+            " bedtools intersect -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/CpG_hg19_WHOLEGENOME_mod_C_coordinate.bed -b stdin"
+            " > {output.SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpG}")
+
+#bedtools intersect 
+#-a <BED> (output of v)
+#-b /HhaI_hg19_biostar86480_coordinates_only_2bp_slop.bed
+#-F 1 | bedtools slop -i stdin
+#-g /hg19_chr_length.fa.g -b -2 |
+#bedtools intersect -a /CpG_hg19_WHOLEGENOME_mod_C_coordinate.bed -b stdin > quali_filtered_complete_overlap_HhaI_CpG.bed
+
+
+
+
+rule S4d2_Overlap_HhaI_CpG:
+    input:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpG = join(TrimDIR, '{sample}_quali_filtered_complete_overlap_HhaI_CpG.bed')
+    output:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCounted = join(TrimDIR, '{sample}_quali_filtered_complete_overlap_HhaI_CpG_uniq_c.bed')
+    run:       
+        shell("""uniq -c {input.SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpG} | awk '{{print $2"\\t"$3"\\t"$4"\\t"$5"\\t"$1}}' > {output.SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCounted}""")
+        
+rule S6a_Find_ScarSites:
+    input:
+        SampleAdapterClearedMergedRL = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged.fq'),
+        SampleAdapterClearedUNMergedRL = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged.fq')
+    output:
+        SampleAdapterClearedMergedRLGCGATail = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A_outm.fq'),
+        SampleAdapterClearedMergedRLTTailCGC = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC_outm.fq'),
+        SampleAdapterClearedUNMergedRLGCGATail = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A_outm.fq'),
+        SampleAdapterClearedUNMergedRLTTailCGC = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC_outm.fq')
+    run:       
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedMergedRL}"
+            " outm=/{output.SampleAdapterClearedMergedRLGCGATail}"
+            " literal=GCGAAAAAA k=9 hdist=1 rcomp=f mm=f")
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedMergedRL}"
+            " outm=/{output.SampleAdapterClearedMergedRLTTailCGC}"
+            " literal=TTTTTTCGC k=9 hdist=1 rcomp=f mm=f")
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedUNMergedRL}"
+            " outm=/{output.SampleAdapterClearedUNMergedRLGCGATail}"
+            " literal=GCGAAAAAA k=9 hdist=1 rcomp=f mm=f int=f")
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedUNMergedRL}"
+            " outm=/{output.SampleAdapterClearedUNMergedRLTTailCGC}"
+            " literal=TTTTTTCGC k=9 hdist=1 rcomp=f mm=f int=f")
+
+rule S6b_Kmer_Trimming:
+    input:
+        SampleAdapterClearedMergedRLGCGATail = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A_outm.fq'),
+        SampleAdapterClearedMergedRLTTailCGC = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC_outm.fq'),
+        SampleAdapterClearedUNMergedRLGCGATail = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A_outm.fq'),
+        SampleAdapterClearedUNMergedRLTTailCGC = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC_outm.fq')
+    output:
+        SampleAdapterClearedMergedRLGCGATailTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A-trimmed.fq'),
+        SampleAdapterClearedMergedRLTTailCGCTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC-trimmed.fq'),
+        SampleAdapterClearedUNMergedRLGCGATailTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A-trimmed.fq'),
+        SampleAdapterClearedUNMergedRLTTailCGCTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC-trimmed.fq')
+    run:       
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedMergedRLGCGATail}"
+            " out=/{output.SampleAdapterClearedMergedRLGCGATailTRIM}"
+            " literal=GCGAAAAAA k=9 ktrim=r tp=-3 hdist=1 rcomp=f mm=f")
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedMergedRLTTailCGC}"
+            " out=/{output.SampleAdapterClearedMergedRLTTailCGCTRIM}"
+            " literal=TTTTTTCGC k=9 ktrim=l tp=-3 hdist=1 rcomp=f mm=f")
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedUNMergedRLGCGATail}"
+            " out=/{output.SampleAdapterClearedUNMergedRLGCGATailTRIM}"
+            " literal=GCGAAAAAA k=9 ktrim=r tp=-3 hdist=1 rcomp=f mm=f int=f")
+        shell("bbduk.sh"
+            " in=/{input.SampleAdapterClearedUNMergedRLTTailCGC}"
+            " out=/{output.SampleAdapterClearedUNMergedRLTTailCGCTRIM}"
+            " literal=TTTTTTCGC k=9 ktrim=l tp=-3 hdist=1 rcomp=f mm=f")
+
+
+rule S6c_BWA_MEM_merged_UNmerged:
+    input:
+        SampleAdapterClearedMergedRLGCGATailTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A-trimmed.fq'),
+        SampleAdapterClearedMergedRLTTailCGCTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC-trimmed.fq'),
+        SampleAdapterClearedUNMergedRLGCGATailTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A-trimmed.fq'),
+        SampleAdapterClearedUNMergedRLTTailCGCTRIM = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC-trimmed.fq')
+    output:
+        SampleAdapterClearedMergedRLGCGATailTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A-trimmed.sam'),
+        SampleAdapterClearedMergedRLTTailCGCTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC-trimmed.sam'),
+        SampleAdapterClearedUNMergedRLGCGATailTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A-trimmed.sam'),
+        SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC-trimmed.sam')
+    run:       
+        shell("bwa mem "
+            "/mnt/data_1/genomes/hg19/UCSC/tar/hg19.fa "
+            "{input.SampleAdapterClearedMergedRLGCGATailTRIM} "
+            "-t 8 -v 1 -k 19 -w 100 -d 100 "
+            "-r 1.5 -y 20 -c 500 -D 0.5 -W 0 "
+            "-m 50 -A 1 -B 4 -O 6,6 -E 1,1 " 
+            "-L 5,5 -U 17 -T 30 -h 5 "
+            "> {output.SampleAdapterClearedMergedRLGCGATailTRIMMapped}")
+        shell("bwa mem "
+            "/mnt/data_1/genomes/hg19/UCSC/tar/hg19.fa "
+            "{input.SampleAdapterClearedMergedRLTTailCGCTRIM} "
+            "-t 8 -v 1 -k 19 -w 100 -d 100 "
+            "-r 1.5 -y 20 -c 500 -D 0.5 -W 0 "
+            "-m 50 -A 1 -B 4 -O 6,6 -E 1,1 " 
+            "-L 5,5 -U 17 -T 30 -h 5 "
+            "> {output.SampleAdapterClearedMergedRLTTailCGCTRIMMapped}")
+        shell("bwa mem "
+            "/mnt/data_1/genomes/hg19/UCSC/tar/hg19.fa "
+            "{input.SampleAdapterClearedUNMergedRLGCGATailTRIM} "
+            "-t 8 -v 1 -k 19 -w 100 -d 100 "
+            "-r 1.5 -y 20 -c 500 -D 0.5 -W 0 "
+            "-m 50 -A 1 -B 4 -O 6,6 -E 1,1 " 
+            "-L 5,5 -U 17 -T 30 -h 5 "
+            "> {output.SampleAdapterClearedUNMergedRLGCGATailTRIMMapped}")
+        shell("bwa mem "
+            "/mnt/data_1/genomes/hg19/UCSC/tar/hg19.fa "
+            "{input.SampleAdapterClearedUNMergedRLTTailCGCTRIM} "
+            "-t 8 -v 1 -k 19 -w 100 -d 100 "
+            "-r 1.5 -y 20 -c 500 -D 0.5 -W 0 "
+            "-m 50 -A 1 -B 4 -O 6,6 -E 1,1 " 
+            "-L 5,5 -U 17 -T 30 -h 5 "
+            "> {output.SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped}")
+        
+rule S6de_BAM_Merge_Filter_Bed:
+    input:
+        SampleAdapterClearedMergedRLGCGATailTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A-trimmed.sam'),
+        SampleAdapterClearedMergedRLTTailCGCTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC-trimmed.sam'),
+        SampleAdapterClearedUNMergedRLGCGATailTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A-trimmed.sam'),
+        SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC-trimmed.sam')
+    output:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined.sam'),
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFiltered = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered.bam'),
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined.sam'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFiltered = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered.bam'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered.bed')
+    run:       
+        shell("picard"
+    " MergeSamFiles"
+    " MSD=true VALIDATION_STRINGENCY=LENIENT"
+    " I={input.SampleAdapterClearedMergedRLGCGATailTRIMMapped}"
+    " I={input.SampleAdapterClearedUNMergedRLGCGATailTRIMMapped}"
+    " O={output.SampleAdapterClearedJoinedRLGCGATailTRIMMapped}")
+        shell("samtools"
+    " view -b -F 0x904 -q 10"
+    " {output.SampleAdapterClearedJoinedRLGCGATailTRIMMapped}"
+    " > {output.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFiltered}")   
+        shell("bedtools bamtobed" 
+    " -i {output.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFiltered}"
+    " > {output.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBed}") 
+        shell("picard"
+    " MergeSamFiles"
+    " MSD=true VALIDATION_STRINGENCY=LENIENT"
+    " I={input.SampleAdapterClearedMergedRLTTailCGCTRIMMapped}"
+    " I={input.SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped}"
+    " O={output.SampleAdapterClearedJoinedRLTTailCGCTRIMMapped}")
+        shell("samtools"
+    " view -b -F 0x904 -q 10"
+    " {output.SampleAdapterClearedJoinedRLTTailCGCTRIMMapped}"
+    " > {output.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFiltered}")   
+        shell("bedtools bamtobed" 
+    " -i {output.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFiltered}"
+    " > {output.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBed}") 
+        
+rule S6f_reduce_to_scar:
+    input:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered.bed')
+    output:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarA = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered_A_SCAR.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarT = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered_T_SCAR.bed')
+    run:       
+        shell("""bedtools slop -i {input.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBed} -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l 0 -r -3 -s | bedtools flank -i stdin -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l 0 -r 3 -s | bedtools intersect -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/HhaI_hg19_biostar86480_coordinates_only.bed -b stdin -wb -f 0.75 | awk '{{print $1"\t"int($2)"\t"int($3)}}' > {output.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarA}""")
+        shell("""bedtools slop -i {input.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBed} -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l 0 -r -3 -s | bedtools flank -i stdin -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l 0 -r 3 -s | bedtools intersect -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/HhaI_hg19_biostar86480_coordinates_only.bed -b stdin -wb -f 0.75 | awk '{{print  $1"\t"int($2)"\t"int($3)}}' > {output.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarT}""")
+            
+rule S6g_CpG_C_position:
+    input:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarA = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered_A_SCAR.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarT = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered_T_SCAR.bed')
+    output:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarACpG = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered_A_SCAR_overlap_CpG.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarTCpG = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered_T_SCAR_overlap_CpG.bed')
+    run:       
+        shell("bedtools intersect -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/CpG_hg19_WHOLEGENOME_mod_C_coordinate.bed -b {input.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarA} > {output.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarACpG}")
+        shell("bedtools"
+            " intersect"
+            " -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/CpG_hg19_WHOLEGENOME_mod_C_coordinate.bed"
+            " -b {input.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarT}"
+            " > {output.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarTCpG}")  
+
+rule S6f_reduce_overlap_CpG_2_4:
+    input:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBed = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered.bed')
+    output:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarACpG = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered_A_SCAR_overlap_CpG_2.4.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarTCpG = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered_T_SCAR_overlap_CpG_2.4.bed')
+    run:       
+        shell("""bedtools slop -i {input.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBed} -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l 0 -r -2 -s | bedtools flank -i stdin -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l 0 -r 2 -s | bedtools intersect -a stdin -b /mnt/data_3/2019-08-epi-gSCAR/00_resources/HhaI_hg19_biostar86480_coordinates_only_minus_1bp_slop.bed -f 1 | bedtools intersect -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/CpG_hg19_WHOLEGENOME_mod_C_coordinate.bed -b stdin > {output.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarACpG}""")
+        shell("""bedtools slop -i {input.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBed} -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l -2 -r 0 -s | bedtools flank -i stdin -g /mnt/data_3/2019-08-epi-gSCAR/00_resources/hg19_chr_length.fa.g -l 2 -r 0 -s | bedtools intersect -a stdin -b /mnt/data_3/2019-08-epi-gSCAR/00_resources/HhaI_hg19_biostar86480_coordinates_only_minus_1bp_slop.bed -f 1 | bedtools intersect -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/CpG_hg19_WHOLEGENOME_mod_C_coordinate.bed -b stdin > {output.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarTCpG}""")
+            
+
+rule S6h_combine_Scar_A_T:
+    input:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarACpG = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_GCG-A-trimmed_joined_quali_filtered_A_SCAR_overlap_CpG_2.4.bed'),
+        SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarTCpG = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_T-CGC-trimmed_joined_quali_filtered_T_SCAR_overlap_CpG_2.4.bed')
+    output:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount = join(TrimDIR, '{sample}_A_T_SCAR_CpGs_combined_sorted_uniq_c.bed')
+    run:  
+        
+        shell("""cat {input.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarACpG} {input.SampleAdapterClearedJoinedRLTTailCGCTRIMMappedFilteredBedScarTCpG} | sort -k1,1 -k2,2n | uniq -c | awk '{{ print $2"\t"$3"\t"$4"\t"$5"\t"$1}}' > {output.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount}""")
+    
+
+rule S5a_Overlap_GCGCGC:
+    input:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount = join(TrimDIR, '{sample}_A_T_SCAR_CpGs_combined_sorted_uniq_c.bed')
+    output:
+        SampleScarATGCGCGCOverlap = join(TrimDIR, '{sample}_GCGCGC_sites_overlapping_A_T_SCAR_CpGs.bed')
+    run:       
+        shell("bedtools"
+            " intersect"
+            " -a /mnt/data_3/2019-08-epi-gSCAR/00_resources/HhaI_hg19_biostar86480_coordinates_only_overlapping_sites_only.bed"
+            " -b {input.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount}"
+            " -wa > {output.SampleScarATGCGCGCOverlap}")
+
+rule S5b_Overlap_GCGCGC:
+    input:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCounted = join(TrimDIR, '{sample}_quali_filtered_complete_overlap_HhaI_CpG_uniq_c.bed'), SampleScarATGCGCGCOverlap = join(TrimDIR, '{sample}_GCGCGC_sites_overlapping_A_T_SCAR_CpGs.bed')
+    output:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCountedArtifactSubstracted = join(TrimDIR, '{sample}_quali_filtered_complete_overlap_HhaI_CpG_uniq_c_artifacts_subtracted.bed')
+    run:       
+        shell("""bedtools subtract -a {input.SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCounted} -b {input.SampleScarATGCGCGCOverlap} -A > {output.SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCountedArtifactSubstracted}""")
+      
+rule S7a_Hetero:
+    input:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCountedArtifactSubstracted = join(TrimDIR, '{sample}_quali_filtered_complete_overlap_HhaI_CpG_uniq_c_artifacts_subtracted.bed'), 
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount = join(TrimDIR, '{sample}_A_T_SCAR_CpGs_combined_sorted_uniq_c.bed')
+    output:
+        SampleHeterozygous = join(OutputDIR, '{sample}_heterozygous.bed')
+    run:
+        shell("""bedtools intersect -a {input.SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCountedArtifactSubstracted} -b {input.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount} -wo | awk '{{ print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$10}}' > {output.SampleHeterozygous}""")   
+
+
+rule S8a_HomozygousMethylated:
+    input:
+        SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCountedArtifactSubstracted = join(TrimDIR, '{sample}_quali_filtered_complete_overlap_HhaI_CpG_uniq_c_artifacts_subtracted.bed'), 
+        SampleHeterozygous = join(OutputDIR, '{sample}_heterozygous.bed')
+    output:
+        SampleHomozygousMethylated = join(OutputDIR, '{sample}_homozygous_methylated.bed')
+    run:
+        shell("""bedtools subtract -a {input.SampleAdapterClearedJoinedRLPolyAMappedFilteredOverlapedHhaICpGUniqueCountedArtifactSubstracted} -b {input.SampleHeterozygous} > {output.SampleHomozygousMethylated}""")  
+
+rule S9a_HomozygousUnmethylated:
+    input:
+        SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount = join(TrimDIR, '{sample}_A_T_SCAR_CpGs_combined_sorted_uniq_c.bed'),
+        SampleHeterozygous = join(OutputDIR, '{sample}_heterozygous.bed')
+    output:
+        SampleHomozygousUnmethylated = join(OutputDIR, '{sample}_homozygous_unmethylated.bed')
+    run:
+        shell("""bedtools subtract -a {input.SampleAdapterClearedJoinedRLGCGATailTRIMMappedFilteredBedScarATCpGUniqeCount} -b {input.SampleHeterozygous} > {output.SampleHomozygousUnmethylated}""")  
+
+rule S10a_BetaValue:
+    input:
+        SampleHomozygousMethylated = join(OutputDIR, '{sample}_homozygous_methylated.bed'),
+        SampleHomozygousUnmethylated = join(OutputDIR, '{sample}_homozygous_unmethylated.bed'),
+        SampleHeterozygous = join(OutputDIR, '{sample}_heterozygous.bed')
+    output:
+        SampleHomozygousMethylatedBeta = join(OutputDIR, '{sample}_homozygous_methylated_beta_values.bed'),
+        SampleHomozygousUnmethylatedBeta = join(OutputDIR, '{sample}_homozygous_unmethylated_beta_values.bed'),
+        SampleHeterozygousBeta = join(OutputDIR, '{sample}_heterozygous_beta_values.bed')
+    run:
+        shell("""awk '{{ print $1"\t"$2"\t"$3"\t""1"}}' {input.SampleHomozygousMethylated} > {output.SampleHomozygousMethylatedBeta}""")  
+        shell("""awk '{{ print $1"\t"$2"\t"$3"\t""0"}}' {input.SampleHomozygousUnmethylated} > {output.SampleHomozygousUnmethylatedBeta}""")  
+        shell("""awk '{{ print $1"\t"$2"\t"$3"\t""0.5"}}' {input.SampleHeterozygous} > {output.SampleHeterozygousBeta}""")  
+
+rule S11a_CombineAll:
+    input:
+        SampleHomozygousMethylatedBeta = join(OutputDIR, '{sample}_homozygous_methylated_beta_values.bed'),
+        SampleHomozygousUnmethylatedBeta = join(OutputDIR, '{sample}_homozygous_unmethylated_beta_values.bed'),
+        SampleHeterozygousBeta = join(OutputDIR, '{sample}_heterozygous_beta_values.bed'),
+        SampleAdapterClearedJoinedRLPolyAMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined.sam'),
+        SampleAdapterClearedMergedRLGCGATailTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A-trimmed.sam'),
+        SampleAdapterClearedMergedRLTTailCGCTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC-trimmed.sam'),
+        SampleAdapterClearedUNMergedRLGCGATailTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A-trimmed.sam'),
+        SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped = join(TrimDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC-trimmed.sam')
+    output:
+        SampleBeta = join(OutputDIR, 'result_{sample}_beta_values.bed'),
+        SampleAdapterClearedJoinedRLPolyAMapped = join(StorageDIR, '{sample}_Adapter_MALBAC-R-L_polyAT_clear_joined.bam'),
+        SampleAdapterClearedMergedRLGCGATailTRIMMapped = join(StorageDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_GCG-A-trimmed.bam'),
+        SampleAdapterClearedMergedRLTTailCGCTRIMMapped = join(StorageDIR, '{sample}_Adapter_MALBAC-R-L_clear_merged_T-CGC-trimmed.bam'),
+        SampleAdapterClearedUNMergedRLGCGATailTRIMMapped = join(StorageDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_GCG-A-trimmed.bam'),
+        SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped = join(StorageDIR, '{sample}_Adapter_MALBAC-R-L_clear_unmerged_T-CGC-trimmed.bam')
+    run:
+        shell("cat {input.SampleHomozygousMethylatedBeta} {input.SampleHomozygousUnmethylatedBeta} {input.SampleHeterozygousBeta} | sort -k1,1 -k2,2n >  {output.SampleBeta}")
+        shell("samtools"
+    " view -b"
+    " {input.SampleAdapterClearedJoinedRLPolyAMapped}"
+    " > {output.SampleAdapterClearedJoinedRLPolyAMapped}")
+        shell("samtools"
+    " view -b"
+    " {input.SampleAdapterClearedMergedRLGCGATailTRIMMapped}"
+    " > {output.SampleAdapterClearedMergedRLGCGATailTRIMMapped}")
+        shell("samtools"
+    " view -b"
+    " {input.SampleAdapterClearedMergedRLTTailCGCTRIMMapped}"
+    " > {output.SampleAdapterClearedMergedRLTTailCGCTRIMMapped}")   
+        shell("samtools"
+    " view -b"
+    " {input.SampleAdapterClearedUNMergedRLGCGATailTRIMMapped}"
+    " > {output.SampleAdapterClearedUNMergedRLGCGATailTRIMMapped}")   
+        shell("samtools"
+    " view -b"
+    " {input.SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped}"
+    " > {output.SampleAdapterClearedUNMergedRLTTailCGCTRIMMapped}")   
+
+
